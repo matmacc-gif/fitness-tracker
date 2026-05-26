@@ -24,14 +24,10 @@ export default function NutritionView({ todayKey, meals, saveMeals, macroTotals 
     setAiLoading(true)
     setAiError('')
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 200,
-          messages: [{ role: 'user', content: `Estimate the macros for: "${aiInput}". Reply ONLY with a JSON object, no markdown, no explanation. Format: {"name":"...(clean food name)","calories":0,"protein":0,"carbs":0,"fat":0}` }]
-        })
+        body: JSON.stringify({ description: aiInput })
       })
       const data = await res.json()
       const text = data.content?.find(b => b.type === 'text')?.text || ''
