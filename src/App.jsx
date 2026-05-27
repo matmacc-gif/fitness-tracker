@@ -66,9 +66,25 @@ export default function App() {
   const [logs, setLogs] = useState({})
   const [meals, setMeals] = useState({})
   const [manualDayIdx, setManualDayIdx] = useState(null)
+  const [currentDate, setCurrentDate] = useState(today())
 
   const dayIdx = manualDayIdx !== null ? manualDayIdx : getDayIndex()
   const dayName = SPLIT[dayIdx]
+
+  // Check for date change every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newDate = today()
+      if (newDate !== currentDate) {
+        setCurrentDate(newDate)
+        setLogs({})
+        setMeals({})
+        setManualDayIdx(null)
+        if (session) loadData(session, newDate)
+      }
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [currentDate, session])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -79,20 +95,21 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  const loadData = async (sess, dateKey) => {
+    const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id).eq('date', dateKey)
+    if (wData) {
+      const obj = {}
+      wData.forEach(r => { obj[r.exercise] = r.sets })
+      setLogs({ [dateKey]: obj })
+    }
+    const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', dateKey)
+    if (mData?.[0]) setMeals({ [dateKey]: mData[0].meals })
+    else setMeals({})
+  }
+
   useEffect(() => {
     if (!session) return
-    const loadData = async () => {
-      const todayKey = today()
-      const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', session.user.id).eq('date', todayKey)
-      if (wData) {
-        const obj = {}
-        wData.forEach(r => { obj[r.exercise] = r.sets })
-        setLogs({ [todayKey]: obj })
-      }
-      const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', session.user.id).eq('date', todayKey)
-      if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
-    }
-    loadData()
+    loadData(session, currentDate)
   }, [session])
 
   const saveLogs = async (next) => {
