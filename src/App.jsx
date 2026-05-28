@@ -71,16 +71,13 @@ export default function App() {
   const dayIdx = manualDayIdx !== null ? manualDayIdx : getDayIndex()
   const dayName = SPLIT[dayIdx]
 
-  // Check for date change every minute
   useEffect(() => {
     const interval = setInterval(() => {
       const newDate = today()
       if (newDate !== currentDate) {
         setCurrentDate(newDate)
-        setLogs({})
-        setMeals({})
         setManualDayIdx(null)
-        if (session) loadData(session, newDate)
+        if (session) loadData(session)
       }
     }, 60000)
     return () => clearInterval(interval)
@@ -95,21 +92,28 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const loadData = async (sess, dateKey) => {
-    const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id).eq('date', dateKey)
+  const loadData = async (sess) => {
+    // Load ALL workout logs for progress tracking
+    const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id)
     if (wData) {
       const obj = {}
-      wData.forEach(r => { obj[r.exercise] = r.sets })
-      setLogs({ [dateKey]: obj })
+      wData.forEach(r => {
+        if (!obj[r.date]) obj[r.date] = {}
+        obj[r.date][r.exercise] = r.sets
+      })
+      setLogs(obj)
     }
-    const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', dateKey)
-    if (mData?.[0]) setMeals({ [dateKey]: mData[0].meals })
+
+    // Load today's meals only
+    const todayKey = today()
+    const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', todayKey)
+    if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
     else setMeals({})
   }
 
   useEffect(() => {
     if (!session) return
-    loadData(session, currentDate)
+    loadData(session)
   }, [session])
 
   const saveLogs = async (next) => {
