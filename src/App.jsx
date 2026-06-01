@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import Auth from './components/Auth'
 import TodayView from './components/TodayView'
@@ -67,6 +67,7 @@ export default function App() {
   const [meals, setMeals] = useState({})
   const [manualDayIdx, setManualDayIdx] = useState(null)
   const [currentDate, setCurrentDate] = useState(today())
+  const loadedRef = useRef(false)
 
   const dayIdx = manualDayIdx !== null ? manualDayIdx : getDayIndex()
   const dayName = SPLIT[dayIdx]
@@ -77,7 +78,10 @@ export default function App() {
       if (newDate !== currentDate) {
         setCurrentDate(newDate)
         setManualDayIdx(null)
-        if (session) loadData(session)
+        if (session) {
+          loadedRef.current = false
+          loadData(session)
+        }
       }
     }, 60000)
     return () => clearInterval(interval)
@@ -88,12 +92,17 @@ export default function App() {
       setSession(session)
       setLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, sess) => {
+      setSession(sess)
+      if (sess && !loadedRef.current) {
+        loadedRef.current = true
+        loadData(sess)
+      }
+    })
     return () => subscription.unsubscribe()
   }, [])
 
   const loadData = async (sess) => {
-    // Load ALL workout logs for progress tracking
     const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id)
     if (wData) {
       const obj = {}
@@ -104,7 +113,6 @@ export default function App() {
       setLogs(obj)
     }
 
-    // Load today's meals only
     const todayKey = today()
     const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', todayKey)
     if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
@@ -113,6 +121,8 @@ export default function App() {
 
   useEffect(() => {
     if (!session) return
+    if (loadedRef.current) return
+    loadedRef.current = true
     loadData(session)
   }, [session])
 
