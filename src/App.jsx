@@ -67,42 +67,16 @@ export default function App() {
   const [meals, setMeals] = useState({})
   const [manualDayIdx, setManualDayIdx] = useState(null)
   const [currentDate, setCurrentDate] = useState(today())
-  const loadedRef = useRef(false)
+  const hasLoaded = useRef(false)
+  const userId = useRef(null)
 
   const dayIdx = manualDayIdx !== null ? manualDayIdx : getDayIndex()
   const dayName = SPLIT[dayIdx]
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const newDate = today()
-      if (newDate !== currentDate) {
-        setCurrentDate(newDate)
-        setManualDayIdx(null)
-        if (session) {
-          loadedRef.current = false
-          loadData(session)
-        }
-      }
-    }, 60000)
-    return () => clearInterval(interval)
-  }, [currentDate, session])
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setLoading(false)
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, sess) => {
-      setSession(sess)
-      if (sess && !loadedRef.current) {
-        loadedRef.current = true
-        loadData(sess)
-      }
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
   const loadData = async (sess) => {
+    userId.current = sess.user.id
+
+    // Load ALL workout logs
     const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id)
     if (wData) {
       const obj = {}
@@ -113,32 +87,77 @@ export default function App() {
       setLogs(obj)
     }
 
+    // Load today's meals
     const todayKey = today()
     const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', todayKey)
     if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
     else setMeals({})
   }
 
+  // Auth listener — only load data once on initial sign in
   useEffect(() => {
-    if (!session) return
-    if (loadedRef.current) return
-    loadedRef.current = true
-    loadData(session)
-  }, [session])
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session && !hasLoaded.current) {
+        hasLoaded.current = true
+        loadData(session)
+      }
+      setLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
+      setSession(sess)
+      // Only load data on actual sign in, not token refresh
+      if (event === 'SIGNED_IN' && !hasLoaded.current) {
+        hasLoaded.current = true
+        loadData(sess)
+      }
+      // Reset on sign out
+      if (event === 'SIGNED_OUT') {
+        hasLoaded.current = false
+        setLogs({})
+        setMeals({})
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Midnight reset
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newDate = today()
+      if (newDate !== currentDate) {
+        setCurrentDate(newDate)
+        setManualDayIdx(null)
+        if (session) {
+          hasLoaded.current = false
+          hasLoaded.current = true
+          loadData(session)
+        }
+      }
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [currentDate, session])
 
   const saveLogs = async (next) => {
     setLogs(next)
     const todayKey = today()
     const todayLog = next[todayKey] || {}
     for (const [exercise, sets] of Object.entries(todayLog)) {
-      await supabase.from('workout_logs').upsert({ user_id: session.user.id, date: todayKey, exercise, sets }, { onConflict: 'user_id,date,exercise' })
+      await supabase.from('workout_logs').upsert(
+        { user_id: session.user.id, date: todayKey, exercise, sets },
+        { onConflict: 'user_id,date,exercise' }
+      )
     }
   }
 
   const saveMeals = async (next) => {
     setMeals(next)
     const todayKey = today()
-    await supabase.from('meal_logs').upsert({ user_id: session.user.id, date: todayKey, meals: next[todayKey] || [] }, { onConflict: 'user_id,date' })
+    await supabase.from('meal_logs').upsert(
+      { user_id: session.user.id, date: todayKey, meals: next[todayKey] || [] },
+      { onConflict: 'user_id,date' }
+    )
   }
 
   if (loading) return <div style={{ padding: '2rem', color: '#999' }}>Loading...</div>
@@ -147,7 +166,12 @@ export default function App() {
   const todayKey = today()
   const todayLog = logs[todayKey] || {}
   const todayMeals = meals[todayKey] || []
-  const macroTotals = todayMeals.reduce((a, m) => ({ calories: a.calories + (m.calories || 0), protein: a.protein + (m.protein || 0), carbs: a.carbs + (m.carbs || 0), fat: a.fat + (m.fat || 0) }), { calories: 0, protein: 0, carbs: 0, fat: 0 })
+  const macroTotals = todayMeals.reduce((a, m) => ({
+    calories: a.calories + (m.calories || 0),
+    protein: a.protein + (m.protein || 0),
+    carbs: a.carbs + (m.carbs || 0),
+    fat: a.fat + (m.fat || 0)
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 })
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '1rem' }}>
