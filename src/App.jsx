@@ -51,9 +51,17 @@ export const WORKOUTS = {
 }
 
 const START_DATE = '2025-05-25'
-export const today = () => new Date().toISOString().split('T')[0]
+
+export const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export const getDayIndex = () => {
-  const diff = Math.floor((Date.now() - new Date(START_DATE).getTime()) / 86400000)
+  const d = new Date()
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const start = new Date(START_DATE)
+  const diff = Math.floor((local - start) / 86400000)
   return (diff + 1) % 7
 }
 
@@ -68,15 +76,11 @@ export default function App() {
   const [manualDayIdx, setManualDayIdx] = useState(null)
   const [currentDate, setCurrentDate] = useState(today())
   const hasLoaded = useRef(false)
-  const userId = useRef(null)
 
   const dayIdx = manualDayIdx !== null ? manualDayIdx : getDayIndex()
   const dayName = SPLIT[dayIdx]
 
   const loadData = async (sess) => {
-    userId.current = sess.user.id
-
-    // Load ALL workout logs
     const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id)
     if (wData) {
       const obj = {}
@@ -87,14 +91,12 @@ export default function App() {
       setLogs(obj)
     }
 
-    // Load today's meals
     const todayKey = today()
     const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', todayKey)
     if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
     else setMeals({})
   }
 
-  // Auth listener — only load data once on initial sign in
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -107,12 +109,10 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess)
-      // Only load data on actual sign in, not token refresh
       if (event === 'SIGNED_IN' && !hasLoaded.current) {
         hasLoaded.current = true
         loadData(sess)
       }
-      // Reset on sign out
       if (event === 'SIGNED_OUT') {
         hasLoaded.current = false
         setLogs({})
@@ -122,18 +122,14 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Midnight reset
+  // Midnight reset using local time
   useEffect(() => {
     const interval = setInterval(() => {
       const newDate = today()
       if (newDate !== currentDate) {
         setCurrentDate(newDate)
         setManualDayIdx(null)
-        if (session) {
-          hasLoaded.current = false
-          hasLoaded.current = true
-          loadData(session)
-        }
+        if (session) loadData(session)
       }
     }, 60000)
     return () => clearInterval(interval)
