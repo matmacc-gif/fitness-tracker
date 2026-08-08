@@ -81,31 +81,34 @@ export default function App() {
   const dayName = SPLIT[dayIdx]
 
   const loadData = async (sess) => {
-    const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id)
-    if (wData) {
-      const obj = {}
-      wData.forEach(r => {
-        if (!obj[r.date]) obj[r.date] = {}
-        obj[r.date][r.exercise] = r.sets
-      })
-      setLogs(obj)
+    try {
+      const { data: wData } = await supabase.from('workout_logs').select('*').eq('user_id', sess.user.id)
+      if (wData) {
+        const obj = {}
+        wData.forEach(r => {
+          if (!obj[r.date]) obj[r.date] = {}
+          obj[r.date][r.exercise] = r.sets
+        })
+        setLogs(obj)
+      }
+      const todayKey = today()
+      const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', todayKey)
+      if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
+      else setMeals({})
+    } catch (e) {
+      console.error('loadData error:', e)
     }
-
-    const todayKey = today()
-    const { data: mData } = await supabase.from('meal_logs').select('*').eq('user_id', sess.user.id).eq('date', todayKey)
-    if (mData?.[0]) setMeals({ [todayKey]: mData[0].meals })
-    else setMeals({})
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session)
       if (session && !hasLoaded.current) {
         hasLoaded.current = true
-        loadData(session)
+        await loadData(session)
       }
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess)
@@ -122,7 +125,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Midnight reset using local time
   useEffect(() => {
     const interval = setInterval(() => {
       const newDate = today()
