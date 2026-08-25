@@ -6,7 +6,7 @@ import WorkoutView from './components/WorkoutView'
 import NutritionView from './components/NutritionView'
 import ProgressView from './components/ProgressView'
 
-export const MACRO_TARGETS = { calories: 2400, protein: 200, carbs: 225, fat: 70 }
+export const MACRO_TARGETS = { calories: 1900, protein: 160, carbs: 140, fat: 60 }
 export const SPLIT = ['Push', 'Pull', 'Legs', 'Cardio', 'Full Body', 'Rest', 'Cardio']
 export const WORKOUTS = {
   Push: [
