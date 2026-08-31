@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { MACRO_TARGETS } from '../App'
+import { supabase } from '../supabaseClient'
 
 const inp = { padding: '7px 8px', fontSize: 13, borderRadius: 8, border: '0.5px solid #444', background: '#1a1a1a', color: '#f0f0f0', width: '100%', boxSizing: 'border-box' }
 
@@ -17,7 +18,51 @@ export default function NutritionView({ todayKey, meals, saveMeals, macroTotals 
   const [saveStatus, setSaveStatus] = useState('')
   const [editingIdx, setEditingIdx] = useState(null)
   const [editForm, setEditForm] = useState({})
+  const [presets, setPresets] = useState([])
+  const [selectedPreset, setSelectedPreset] = useState('')
+  const [presetStatus, setPresetStatus] = useState('')
   const todayList = meals[todayKey] || []
+
+  useEffect(() => {
+    loadPresets()
+  }, [])
+
+  const loadPresets = async () => {
+    const { data } = await supabase.from('meal_presets').select('*').order('name')
+    if (data) setPresets(data)
+  }
+
+  const saveAsPreset = async (meal) => {
+    const { error } = await supabase.from('meal_presets').insert({
+      name: meal.name,
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fat: meal.fat,
+    })
+    if (!error) {
+      await loadPresets()
+      setPresetStatus('✓ Preset saved')
+      setTimeout(() => setPresetStatus(''), 2000)
+    }
+  }
+
+  const deletePreset = async (id) => {
+    await supabase.from('meal_presets').delete().eq('id', id)
+    await loadPresets()
+    setSelectedPreset('')
+  }
+
+  const addFromPreset = async () => {
+    const preset = presets.find(p => p.id === selectedPreset)
+    if (!preset) return
+    const meal = { name: preset.name, calories: preset.calories, protein: preset.protein, carbs: preset.carbs, fat: preset.fat }
+    const next = { ...meals, [todayKey]: [...todayList, meal] }
+    await saveMeals(next)
+    setSelectedPreset('')
+    setSaveStatus('✓ Saved')
+    setTimeout(() => setSaveStatus(''), 2000)
+  }
 
   const estimateMacros = async () => {
     if (!aiInput.trim()) return
@@ -79,6 +124,27 @@ export default function NutritionView({ todayKey, meals, saveMeals, macroTotals 
           ))}
         </div>
       </div>
+
+      {presets.length > 0 && (
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Quick add from presets</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <select value={selectedPreset} onChange={e => setSelectedPreset(e.target.value)} style={{ ...inp, flex: 1 }}>
+              <option value=''>Select a preset...</option>
+              {presets.map(p => (
+                <option key={p.id} value={p.id}>{p.name} — {p.calories} kcal · P:{p.protein}g C:{p.carbs}g F:{p.fat}g</option>
+              ))}
+            </select>
+            {selectedPreset && (
+              <>
+                <button onClick={addFromPreset} style={{ padding: '7px 12px', fontSize: 13, borderRadius: 8, border: '0.5px solid #444', background: 'none', cursor: 'pointer', color: '#f0f0f0', whiteSpace: 'nowrap' }}>+ Add</button>
+                <button onClick={() => deletePreset(selectedPreset)} style={{ padding: '7px 12px', fontSize: 13, borderRadius: 8, border: '0.5px solid #444', background: 'none', cursor: 'pointer', color: '#e55', whiteSpace: 'nowrap' }}>Delete</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ marginBottom: '1.25rem' }}>
         <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Log a meal</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
@@ -96,7 +162,9 @@ export default function NutritionView({ todayKey, meals, saveMeals, macroTotals 
           <button onClick={addMeal} style={{ flex: 1, padding: '9px', border: '0.5px solid #444', borderRadius: 8, background: 'none', cursor: 'pointer', fontSize: 14, color: '#f0f0f0' }}>+ Add meal</button>
           {saveStatus && <span style={{ fontSize: 13, color: '#1d9e75' }}>{saveStatus}</span>}
         </div>
+        {presetStatus && <div style={{ fontSize: 12, color: '#1d9e75', marginTop: 6 }}>{presetStatus}</div>}
       </div>
+
       <div>
         {todayList.length === 0 && <div style={{ fontSize: 13, color: '#999', textAlign: 'center', padding: '1.5rem' }}>No meals logged yet</div>}
         {todayList.map((m, i) => (
@@ -120,7 +188,8 @@ export default function NutritionView({ todayKey, meals, saveMeals, macroTotals 
                   <div style={{ fontSize: 14, fontWeight: 500 }}>{m.name}</div>
                   <div style={{ fontSize: 12, color: '#999' }}>{m.calories} kcal · P:{m.protein}g C:{m.carbs}g F:{m.fat}g</div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button onClick={() => saveAsPreset(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 11, whiteSpace: 'nowrap' }}>+ preset</button>
                   <button onClick={() => startEdit(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 13 }}>✎</button>
                   <button onClick={() => removeMeal(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 16 }}>✕</button>
                 </div>
